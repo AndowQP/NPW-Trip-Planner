@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNW Tour Planner</title>
+    
+    <!-- Tailwind CSS (via CDN for standalone HTML) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Hide scrollbar for the horizontal tabs */
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Animation for the hover card */
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: scale(0.98); } 
+            to { opacity: 1; transform: scale(1); } 
+        }
+        .animate-fade-in { animation: fadeIn 0.2s ease-in-out; }
+        
+        /* Custom scrollbar for the location list */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen w-full bg-slate-50 overflow-hidden font-sans text-slate-800 relative">
+
+    <!-- Sidebar List -->
+    <div class="w-full md:w-[350px] lg:w-[400px] h-1/2 md:h-full bg-white shadow-xl z-20 flex flex-col border-r border-slate-200">
+        
+        <!-- Header & Tabs -->
+        <div class="bg-white border-b border-slate-100 shrink-0 px-5 pt-5 pb-3">
+            <h1 class="text-2xl font-bold text-slate-800 flex items-center gap-2 tracking-tight">
+                <i data-lucide="map-pin" class="text-blue-600"></i> Tour Planner
+            </h1>
+            <p class="text-sm text-slate-500 mt-1 mb-4">Explore carefully curated spots</p>
+            
+            <div id="tabs-container" class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <!-- Tabs injected by JS -->
+            </div>
+        </div>
+
+        <!-- Location List -->
+        <div id="location-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50 custom-scrollbar">
+            <!-- List items injected by JS -->
+        </div>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map" class="w-full md:flex-1 h-1/2 md:h-full z-10 relative bg-slate-200">
+        <!-- Leaflet map injects here -->
+    </div>
+
+    <!-- Hover Preview Card Overlay (Hidden by default) -->
+    <div id="hover-card" class="hidden fixed bg-white shadow-2xl rounded-xl overflow-hidden z-[1000] w-72 pointer-events-auto ring-1 ring-black/5 animate-fade-in" style="left: 0px; top: 0px;">
+        <!-- Image Area -->
+        <div class="h-40 relative flex items-center justify-center overflow-hidden bg-slate-100" id="card-image-container">
+            <img id="card-image" alt="" class="w-full h-full object-cover absolute inset-0 z-10" />
+            <div id="card-image-fallback" class="hidden absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-200 p-4">
+                <span id="card-fallback-text" class="text-slate-600 font-bold text-lg text-center leading-tight drop-shadow-sm"></span>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="p-4 bg-white">
+            <h3 id="card-title" class="font-bold text-slate-800 text-lg mb-1 truncate">Title</h3>
+            <p id="card-cat" class="text-xs text-slate-500 mb-4 font-bold uppercase tracking-wide">Category</p>
+            
+            <div class="flex gap-2">
+                <a id="card-map-btn" href="#" target="_blank" rel="noreferrer" class="flex-1 bg-slate-100 text-slate-700 text-center py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition border border-slate-200 flex items-center justify-center gap-1.5">
+                    <i data-lucide="map" class="w-4 h-4"></i> Map
+                </a>
+                <a id="card-dir-btn" href="#" target="_blank" rel="noreferrer" class="flex-1 bg-blue-600 text-white text-center py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow-sm flex items-center justify-center gap-1.5">
+                    <i data-lucide="navigation" class="w-4 h-4"></i> Directions
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Data
+        const locationsData = [
+            { id: 1, name: "Multnomah Falls", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.5762, lng: -122.1158, googleLink: "https://maps.app.goo.gl/example123" },
+            { id: 2, name: "Silver Falls State Park", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 44.8789, lng: -122.6446 },
+            { id: 3, name: "Beacon Rock State Park", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6288, lng: -122.0201 },
+            { id: 4, name: "Maryhill Stonehenge Memorial", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6948, lng: -120.8062 },
+            { id: 5, name: "Hood River Lavender Farm", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6560, lng: -121.5303 },
+            { id: 6, name: "Yesteryear Farms", cat: "Outdoor", tabs: ["all", "city", "silverfall"], lat: 45.3214, lng: -122.7562 },
+            { id: 7, name: "Portland Japanese Garden", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5186, lng: -122.7077 },
+            { id: 8, name: "International Rose Test Garden", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5191, lng: -122.7055 },
+            { id: 9, name: "Pittock Mansion", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5256, lng: -122.7163 },
+            { id: 10, name: "Powell's City of Books", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5231, lng: -122.6813 },
+            { id: 11, name: "Oregon City Municipal Elevator", cat: "Culture/Arch", tabs: ["all", "city", "silverfall"], lat: 45.3582, lng: -122.6094 },
+            { id: 12, name: "Vista House", cat: "Culture/Arch", tabs: ["all", "city", "gorge"], lat: 45.5395, lng: -122.2443 },
+            { id: 13, name: "Timberline Lodge", cat: "Culture/Arch", tabs: ["all", "gorge"], lat: 45.3311, lng: -121.7110 },
+            { id: 14, name: "Portland Saturday Market", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5228, lng: -122.6703 },
+            { id: 15, name: "Voodoo Doughnut", cat: "Food", tabs: ["all", "city"], lat: 45.5227, lng: -122.6731 },
+            { id: 16, name: "Excellent Cuisine", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5048, lng: -122.5794 },
+            { id: 17, name: "Nicholas Restaurant (Madison)", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5124, lng: -122.6483 },
+            { id: 18, name: "Upper Left Roasters", cat: "Coffee or Tea", tabs: ["all", "city", "gorge"], lat: 45.5113, lng: -122.6534 },
+            { id: 19, name: "Wooden Shoe Tulip Farm", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 45.1583, lng: -122.7483 },
+            { id: 20, name: "Swan Island Dahlias", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 45.2448, lng: -122.7099 }
+        ];
+
+        const tabsData = [
+            { id: 'all', label: 'All' },
+            { id: 'gorge', label: 'Gorge' },
+            { id: 'city', label: 'City (PDX)' },
+            { id: 'silverfall', label: 'Silver Fall' }
+        ];
+
+        // State
+        let activeTab = 'all';
+        let mapInstance = null;
+        let markersGroup = null;
+        let isHoverCardSticky = false; // To keep card open when moving mouse onto it
+
+        // Initialize Map
+        function initMap() {
+            mapInstance = L.map('map', { zoomControl: false }).setView([45.52, -122.67], 10);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(mapInstance);
+            L.control.zoom({ position: 'bottomright' }).addTo(mapInstance);
+            
+            markersGroup = L.featureGroup().addTo(mapInstance);
+        }
+
+        // Get Icon based on Category
+        function getIconHTML(cat) {
+            if (cat.includes('Outdoor')) return '<i data-lucide="tree-pine" class="w-4 h-4 text-green-500 mt-0.5"></i>';
+            if (cat.includes('Food')) return '<i data-lucide="utensils" class="w-4 h-4 text-orange-500 mt-0.5"></i>';
+            if (cat.includes('Coffee')) return '<i data-lucide="coffee" class="w-4 h-4 text-amber-700 mt-0.5"></i>';
+            if (cat.includes('Culture')) return '<i data-lucide="landmark" class="w-4 h-4 text-purple-500 mt-0.5"></i>';
+            return '<i data-lucide="map-pin" class="w-4 h-4 text-slate-400 mt-0.5"></i>';
+        }
+
+        // Render Tabs
+        function renderTabs() {
+            const container = document.getElementById('tabs-container');
+            container.innerHTML = '';
+            
+            tabsData.forEach(tab => {
+                const btn = document.createElement('button');
+                btn.textContent = tab.label;
+                btn.className = `px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                    activeTab === tab.id 
+                        ? 'bg-blue-600 text-white shadow-sm' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`;
+                btn.onclick = () => {
+                    activeTab = tab.id;
+                    renderTabs(); // Re-render to update active styling
+                    updateView(); // Update list and map
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        // Render List & Update Map
+        function updateView() {
+            const listContainer = document.getElementById('location-list');
+            listContainer.innerHTML = '';
+            markersGroup.clearLayers();
+            
+            const filteredLocs = locationsData.filter(loc => loc.tabs.includes(activeTab));
+            
+            filteredLocs.forEach(loc => {
+                // 1. Create List Item
+                const itemDiv = document.createElement('div');
+                itemDiv.className = "bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all cursor-pointer flex flex-col group";
+                itemDiv.innerHTML = `
+                    <div class="flex items-start justify-between mb-1">
+                        <h4 class="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition-colors pr-2">
+                            ${loc.name}
+                        </h4>
+                        <span class="shrink-0">${getIconHTML(loc.cat)}</span>
+                    </div>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        ${loc.cat}
+                    </span>
+                `;
+                
+                // Click to fly to marker
+                itemDiv.onclick = () => {
+                    mapInstance.flyTo([loc.lat, loc.lng], 15, { duration: 1.5 });
+                    if (window.innerWidth < 768) {
+                        document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+                    }
+                };
+
+                // Hover for list item
+                itemDiv.onmouseenter = (e) => {
+                    const rect = itemDiv.getBoundingClientRect();
+                    showHoverCard(loc, rect.right + 10, rect.top);
+                };
+                itemDiv.onmouseleave = () => hideHoverCard();
+
+                listContainer.appendChild(itemDiv);
+
+                // 2. Create Map Marker
+                const marker = L.marker([loc.lat, loc.lng]);
+                
+                marker.on('mouseover', (e) => {
+                    showHoverCard(loc, e.originalEvent.clientX + 15, e.originalEvent.clientY + 15);
+                });
+                marker.on('mouseout', () => hideHoverCard());
+                marker.on('click', () => {
+                    mapInstance.flyTo([loc.lat, loc.lng], 15, { duration: 1.5 });
+                });
+
+                markersGroup.addLayer(marker);
+            });
+
+            // Auto frame map
+            if (filteredLocs.length > 0) {
+                mapInstance.fitBounds(markersGroup.getBounds(), { padding: [40, 40], maxZoom: 14 });
+            }
+
+            // Re-initialize icons for newly created DOM elements
+            lucide.createIcons();
+        }
+
+        // Hover Card Logic
+        const hoverCard = document.getElementById('hover-card');
+        
+        // Keep card open if hovering over the card itself
+        hoverCard.onmouseenter = () => { isHoverCardSticky = true; };
+        hoverCard.onmouseleave = () => { 
+            isHoverCardSticky = false; 
+            hideHoverCard(); 
+        };
+
+        function showHoverCard(loc, x, y) {
+            isHoverCardSticky = false;
+            
+            // Adjust boundaries so it doesn't clip off screen
+            const cardWidth = 288;
+            const cardHeight = 310;
+            if (x + cardWidth > window.innerWidth) x = x - cardWidth - 30; // Push left
+            if (y + cardHeight > window.innerHeight) y = window.innerHeight - cardHeight - 20; // Push up
+            
+            hoverCard.style.left = `${x}px`;
+            hoverCard.style.top = `${y}px`;
+            
+            // Populate Data
+            document.getElementById('card-title').textContent = loc.name;
+            document.getElementById('card-cat').textContent = loc.cat;
+            
+            // URLs
+            const mapUrl = loc.googleLink || `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+            const dirUrl = `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`;
+            document.getElementById('card-map-btn').href = mapUrl;
+            document.getElementById('card-dir-btn').href = dirUrl;
+
+            // Handle Image (Resetting state)
+            const imgEl = document.getElementById('card-image');
+            const fallbackEl = document.getElementById('card-image-fallback');
+            
+            imgEl.classList.remove('hidden');
+            fallbackEl.classList.add('hidden');
+            imgEl.src = `images/${loc.name}.jpg`;
+            document.getElementById('card-fallback-text').textContent = loc.name;
+
+            hoverCard.classList.remove('hidden');
+        }
+
+        function hideHoverCard() {
+            setTimeout(() => {
+                if (!isHoverCardSticky) {
+                    hoverCard.classList.add('hidden');
+                }
+            }, 50); // slight delay to allow mouse to move onto card
+        }
+
+        // Image error fallback
+        function handleImageError() {
+            document.getElementById('card-image').classList.add('hidden');
+            document.getElementById('card-image-fallback').classList.remove('hidden');
+        }
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            renderTabs();
+            updateView();
+            lucide.createIcons();
+            
+            // Attach error listener dynamically to avoid timing issues
+            document.getElementById('card-image').addEventListener('error', handleImageError);
+        });
+
+    </script>
+</body>
+</html>
