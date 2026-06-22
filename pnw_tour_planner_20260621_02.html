@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNW Tour Planner</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f8fafc; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Map Adjustments */
+        .leaflet-popup-content { margin: 12px; }
+        .leaflet-container { font-family: inherit; }
+        
+        /* Smooth transitions */
+        .tab-btn { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- Sidebar: Tabs & List -->
+    <div class="w-full md:w-1/3 lg:w-[30%] h-[45%] md:h-full bg-white flex flex-col shadow-2xl z-20 relative">
+        <!-- Header & Tabs -->
+        <div class="bg-slate-50 border-b border-slate-200 shrink-0">
+            <div class="p-4 pb-2">
+                <h1 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-map-location-dot text-blue-600 mr-2"></i>Tour Planner</h1>
+                <p class="text-xs text-slate-500 mt-1">Explore carefully curated spots</p>
+            </div>
+            <!-- Tabs -->
+            <div class="flex px-3 pb-3 gap-2 overflow-x-auto custom-scroll" id="tabs-container">
+                <button onclick="setTab('all')" class="tab-btn active-tab px-4 py-1.5 rounded-full text-sm font-semibold bg-blue-600 text-white shadow-sm whitespace-nowrap" data-tab="all">All</button>
+                <button onclick="setTab('gorge')" class="tab-btn px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-200 text-slate-600 hover:bg-slate-300 whitespace-nowrap" data-tab="gorge">Gorge</button>
+                <button onclick="setTab('city')" class="tab-btn px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-200 text-slate-600 hover:bg-slate-300 whitespace-nowrap" data-tab="city">City (PDX)</button>
+                <button onclick="setTab('silverfall')" class="tab-btn px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-200 text-slate-600 hover:bg-slate-300 whitespace-nowrap" data-tab="silverfall">Silver Fall</button>
+            </div>
+        </div>
+
+        <!-- Location List -->
+        <div id="location-list" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scroll bg-slate-50">
+            <!-- JS will populate list here -->
+        </div>
+    </div>
+
+    <!-- Map Area -->
+    <div id="map" class="w-full md:w-2/3 lg:w-[70%] h-[55%] md:h-full z-10 relative"></div>
+
+    <!-- PC Hover Preview Card (Absolute Positioned via JS) -->
+    <div id="preview-card" class="fixed hidden bg-white shadow-2xl rounded-xl overflow-hidden z-[1000] w-72 pointer-events-auto transition-opacity duration-200 ring-1 ring-black/5" style="opacity: 0;">
+        <!-- Image Area with Fallback -->
+        <div class="h-40 relative flex items-center justify-center overflow-hidden bg-slate-100">
+            <!-- Dynamic Image. On error, it hides itself and shows the fallback div behind it -->
+            <img id="preview-img" src="" class="w-full h-full object-cover absolute inset-0 z-10 transition-opacity duration-300">
+            <div id="preview-fallback" class="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-200 p-4">
+                <span id="preview-fallback-text" class="text-slate-600 font-bold text-lg text-center leading-tight drop-shadow-sm"></span>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="p-4 bg-white">
+            <h3 id="preview-title" class="font-bold text-slate-800 text-lg mb-1 truncate">Location Name</h3>
+            <p id="preview-category" class="text-xs text-slate-500 mb-3 font-medium uppercase tracking-wide">Category</p>
+            
+            <div class="flex gap-2">
+                <a id="preview-btn-map" href="#" target="_blank" class="flex-1 bg-slate-100 text-slate-700 text-center py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition border border-slate-200 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-map"></i> View Map
+                </a>
+                <a id="preview-btn-dir" href="#" target="_blank" class="flex-1 bg-blue-600 text-white text-center py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow-sm flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-directions"></i> Direction
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Data derived from the user's CSV files with approximate coordinates
+        const locations = [
+            { id: 1, name: "Multnomah Falls", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.5762, lng: -122.1158 },
+            { id: 2, name: "Silver Falls State Park", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 44.8789, lng: -122.6446 },
+            { id: 3, name: "Beacon Rock State Park", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6288, lng: -122.0201 },
+            { id: 4, name: "Maryhill Stonehenge Memorial", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6948, lng: -120.8062 },
+            { id: 5, name: "Hood River Lavender Farm", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6560, lng: -121.5303 },
+            { id: 6, name: "Yesteryear Farms", cat: "Outdoor", tabs: ["all", "city", "silverfall"], lat: 45.3214, lng: -122.7562 },
+            { id: 7, name: "Portland Japanese Garden", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5186, lng: -122.7077 },
+            { id: 8, name: "International Rose Test Garden", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5191, lng: -122.7055 },
+            { id: 9, name: "Pittock Mansion", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "city"], lat: 45.5256, lng: -122.7163 },
+            { id: 10, name: "Powell's City of Books", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "city"], lat: 45.5231, lng: -122.6813 },
+            { id: 11, name: "Oregon City Municipal Elevator", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "city", "silverfall"], lat: 45.3582, lng: -122.6094 },
+            { id: 12, name: "Vista House", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "city", "gorge"], lat: 45.5395, lng: -122.2443 },
+            { id: 13, name: "Timberline Lodge", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "gorge"], lat: 45.3311, lng: -121.7110 },
+            { id: 14, name: "Portland Saturday Market", cat: "人文 建築 (Culture/Arch)", tabs: ["all", "city"], lat: 45.5228, lng: -122.6703 },
+            { id: 15, name: "Voodoo Doughnut", cat: "Food", tabs: ["all", "city"], lat: 45.5227, lng: -122.6731 },
+            { id: 16, name: "Excellent Cuisine", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5048, lng: -122.5794 },
+            { id: 17, name: "Nicholas Restaurant (Madison)", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5124, lng: -122.6483 },
+            { id: 18, name: "Upper Left Roasters", cat: "Coffee or Tea", tabs: ["all", "city", "gorge"], lat: 45.5113, lng: -122.6534 },
+            { id: 19, name: "Wooden Shoe Tulip Farm", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 45.1583, lng: -122.7483 },
+            { id: 20, name: "Swan Island Dahlias", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 45.2448, lng: -122.7099 }
+        ];
+
+        // System State
+        let currentTab = 'all';
+        let map;
+        let markers = {};
+        
+        // Hover Logic Variables
+        let previewTimeout;
+        const card = document.getElementById('preview-card');
+
+        // Initialize App
+        function initMap() {
+            // Setup Leaflet map, default view to Portland area
+            map = L.map('map', { zoomControl: false }).setView([45.52, -122.67], 10);
+            
+            // Add Map tiles
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Move zoom control to bottom right
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Initial render
+            renderData();
+            
+            // Add listeners to keep hover card open if user moves mouse into the card
+            card.addEventListener('mouseenter', () => clearTimeout(previewTimeout));
+            card.addEventListener('mouseleave', hidePreview);
+        }
+
+        // Tab Switching Logic
+        window.setTab = (tabId) => {
+            currentTab = tabId;
+            
+            // Update UI buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tabId) {
+                    btn.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+                    btn.classList.remove('bg-slate-200', 'text-slate-600', 'hover:bg-slate-300');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+                    btn.classList.add('bg-slate-200', 'text-slate-600', 'hover:bg-slate-300');
+                }
+            });
+
+            renderData();
+        };
+
+        // Render List & Map Pins
+        function renderData() {
+            const listContainer = document.getElementById('location-list');
+            listContainer.innerHTML = '';
+            
+            // Clear existing map markers
+            for (let id in markers) {
+                map.removeLayer(markers[id]);
+            }
+            markers = {};
+
+            const filteredLocs = locations.filter(loc => loc.tabs.includes(currentTab));
+            
+            // Array to hold bounds to automatically frame the map correctly
+            const boundsArray = [];
+
+            filteredLocs.forEach(loc => {
+                // 1. Create List Item
+                const item = document.createElement('div');
+                item.className = "group bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all cursor-pointer flex flex-col relative";
+                
+                // Icon based on category
+                let iconClass = "fa-location-dot text-slate-400";
+                if (loc.cat.includes("Outdoor")) iconClass = "fa-tree text-green-500";
+                if (loc.cat.includes("Food")) iconClass = "fa-utensils text-orange-500";
+                if (loc.cat.includes("Coffee")) iconClass = "fa-mug-hot text-amber-700";
+                if (loc.cat.includes("人文")) iconClass = "fa-building-columns text-purple-500";
+
+                item.innerHTML = `
+                    <div class="flex items-start justify-between mb-1">
+                        <h4 class="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition-colors pr-2">${loc.name}</h4>
+                        <i class="fa-solid ${iconClass} mt-1 shrink-0"></i>
+                    </div>
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">${loc.cat}</span>
+                `;
+                
+                // Click behavior (zoom map)
+                item.onclick = () => focusLocation(loc);
+
+                // Hover List behavior
+                item.addEventListener('mouseenter', (e) => {
+                    const rect = item.getBoundingClientRect();
+                    // Show preview to the right of the list item
+                    showPreview(loc, rect.right + 10, rect.top);
+                });
+                item.addEventListener('mouseleave', hidePreview);
+
+                listContainer.appendChild(item);
+
+                // 2. Create Map Marker
+                const marker = L.marker([loc.lat, loc.lng]).addTo(map);
+                
+                // Standard Leaflet Popup (opens on click)
+                marker.bindPopup(`<b>${loc.name}</b><br><a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" class="text-blue-600 underline mt-1 block">Get Directions</a>`);
+                
+                // Hover Marker behavior
+                marker.on('mouseover', (e) => {
+                    showPreview(loc, e.originalEvent.clientX + 15, e.originalEvent.clientY + 15);
+                });
+                marker.on('mouseout', hidePreview);
+                
+                marker.on('click', () => focusLocation(loc));
+
+                markers[loc.id] = marker;
+                boundsArray.push([loc.lat, loc.lng]);
+            });
+
+            // Adjust Map View automatically
+            if (boundsArray.length > 0) {
+                map.fitBounds(boundsArray, { padding: [40, 40], maxZoom: 14 });
+            }
+        }
+
+        // Action: Center map and highlight
+        function focusLocation(loc) {
+            map.flyTo([loc.lat, loc.lng], 15, { duration: 1.5 });
+            
+            if (markers[loc.id]) {
+                setTimeout(() => markers[loc.id].openPopup(), 1500);
+            }
+            
+            // On mobile, scroll map into view
+            if (window.innerWidth < 768) {
+                document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // --- Hover Preview Engine ---
+        
+        function showPreview(loc, x, y) {
+            clearTimeout(previewTimeout);
+            
+            // Update Card Content
+            document.getElementById('preview-title').textContent = loc.name;
+            document.getElementById('preview-category').textContent = loc.cat;
+            
+            // Buttons URLs
+            document.getElementById('preview-btn-map').href = `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+            document.getElementById('preview-btn-dir').href = `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`;
+            
+            // Image Engine
+            const imgEl = document.getElementById('preview-img');
+            const fallbackTextEl = document.getElementById('preview-fallback-text');
+            
+            // Reset image state
+            imgEl.style.display = 'block'; 
+            imgEl.src = `Image/${loc.name}.jpg`; 
+            
+            // If image fails to load, the onerror triggers
+            imgEl.onerror = () => {
+                imgEl.style.display = 'none'; // Hide broken image
+                fallbackTextEl.textContent = loc.name; // Show nice fallback text
+            };
+
+            // Positioning & Boundary collision detection
+            card.classList.remove('hidden');
+            
+            let finalX = x;
+            let finalY = y;
+            const cardWidth = 288; // w-72 = 18rem = 288px
+            const cardHeight = 310; // Approx height
+
+            if (finalX + cardWidth > window.innerWidth) {
+                finalX = x - cardWidth - 30; // Flip to left side of cursor
+            }
+            if (finalY + cardHeight > window.innerHeight) {
+                finalY = window.innerHeight - cardHeight - 20; // Shift up
+            }
+
+            card.style.left = `${finalX}px`;
+            card.style.top = `${finalY}px`;
+            
+            // Fade in
+            setTimeout(() => card.style.opacity = '1', 10);
+        }
+
+        function hidePreview() {
+            // Grace period allows mouse to travel from map marker into the floating card
+            previewTimeout = setTimeout(() => {
+                card.style.opacity = '0';
+                setTimeout(() => {
+                    if(card.style.opacity === '0') card.classList.add('hidden');
+                }, 200); // Wait for fade out CSS transition
+            }, 150); 
+        }
+
+        // Boot
+        window.onload = initMap;
+
+    </script>
+</body>
+</html>
