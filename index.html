@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PNW Tour Planner</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f8fafc; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Map Adjustments */
+        .leaflet-popup-content { margin: 12px; }
+        .leaflet-container { font-family: inherit; }
+        
+        /* Smooth transitions */
+        .tab-btn { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- Sidebar: Tabs & List -->
+    <div class="w-full md:w-[350px] lg:w-[400px] h-[50%] md:h-full bg-white flex flex-col shadow-2xl z-20 relative border-r border-slate-200">
+        <!-- Header & Tabs -->
+        <div class="bg-white border-b border-slate-100 shrink-0">
+            <div class="p-5 pb-3">
+                <h1 class="text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <i class="fa-solid fa-map-location-dot text-blue-600"></i> Tour Planner
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">Explore carefully curated spots</p>
+            </div>
+            <!-- Tabs -->
+            <div class="flex px-4 pb-3 gap-2 overflow-x-auto custom-scroll" id="tabs-container">
+                <button onclick="setTab('all')" class="tab-btn active-tab px-4 py-1.5 rounded-full text-xs font-semibold bg-blue-600 text-white shadow-sm whitespace-nowrap" data-tab="all">All</button>
+                <button onclick="setTab('gorge')" class="tab-btn px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-tab="gorge">Gorge</button>
+                <button onclick="setTab('city')" class="tab-btn px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-tab="city">City (PDX)</button>
+                <button onclick="setTab('silverfall')" class="tab-btn px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap" data-tab="silverfall">Silver Fall</button>
+            </div>
+        </div>
+
+        <!-- Location List -->
+        <div id="location-list" class="flex-1 overflow-y-auto p-4 space-y-3 custom-scroll bg-slate-50">
+            <!-- JS will populate list here -->
+        </div>
+    </div>
+
+    <!-- Map Area -->
+    <div id="map" class="w-full md:flex-1 h-[50%] md:h-full z-10 relative bg-slate-200"></div>
+
+    <!-- Hover Preview Card (Absolute Positioned via JS) -->
+    <div id="preview-card" class="fixed hidden bg-white shadow-2xl rounded-xl overflow-hidden z-[1000] w-72 pointer-events-auto transition-opacity duration-200 ring-1 ring-black/5" style="opacity: 0;">
+        <!-- Image Area with Fallback -->
+        <div class="h-40 relative flex items-center justify-center overflow-hidden bg-slate-100">
+            <img id="preview-img" src="" class="w-full h-full object-cover absolute inset-0 z-10 transition-opacity duration-300">
+            <div id="preview-fallback" class="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-200 p-4">
+                <span id="preview-fallback-text" class="text-slate-600 font-bold text-lg text-center leading-tight drop-shadow-sm"></span>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="p-4 bg-white">
+            <h3 id="preview-title" class="font-bold text-slate-800 text-lg mb-1 truncate">Location Name</h3>
+            <p id="preview-category" class="text-xs text-slate-500 mb-3 font-bold uppercase tracking-wide">Category</p>
+            
+            <div class="flex gap-2">
+                <a id="preview-btn-map" href="#" target="_blank" class="flex-1 bg-slate-100 text-slate-700 text-center py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition border border-slate-200 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-map"></i> Map
+                </a>
+                <a id="preview-btn-dir" href="#" target="_blank" class="flex-1 bg-blue-600 text-white text-center py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow-sm flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-location-arrow"></i> Directions
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Location Data (Based on your CSV lists)
+        const locations = [
+            // OUTDOOR
+            { id: 1, name: "Multnomah Falls", img: "multnomah_falls.jpg", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.5762, lng: -122.1158 },
+            { id: 2, name: "Silver Falls State Park", img: "Silver Falls State Park.jpg", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 44.8789, lng: -122.6446 },
+            { id: 3, name: "Beacon Rock State Park", img: "BeaconRock.png", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6288, lng: -122.0201 },
+            { id: 4, name: "Maryhill Stonehenge Memorial", img: "maryhill stonehenge_2.png", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6948, lng: -120.8062 },
+            { id: 5, name: "Hood River Lavender Farm", img: "HoodRiveLavender.png", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6560, lng: -121.5303 },
+            { id: 6, name: "Yesteryear Farms", img: "yesteryear_farms.jpg", cat: "Outdoor", tabs: ["all", "city", "silverfall"], lat: 45.3214, lng: -122.7562 },
+            { id: 7, name: "Portland Japanese Garden", img: "pdx_japanese_garden.jpg", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5186, lng: -122.7077 },
+            { id: 8, name: "International Rose Test Garden", img: "rose_garden.jpg", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5191, lng: -122.7055 },
+            { id: 9, name: "Rocky Butte Natural Area", img: "rocky_butte.jpg", cat: "Outdoor", tabs: ["all", "city"], lat: 45.5458, lng: -122.5645 },
+            { id: 10, name: "Jonsrud Viewpoint", img: "Jonsrud.jpg", cat: "Outdoor", tabs: ["all", "city", "gorge"], lat: 45.4121, lng: -122.2720 },
+            { id: 11, name: "Leach Botanical Garden", img: "leach_botanical.jpg", cat: "Outdoor", tabs: ["all", "city"], lat: 45.4740, lng: -122.5256 },
+            { id: 12, name: "Crystal Springs Rhododendron Garden", img: "Rhododendron Garden.jpg", cat: "Outdoor", tabs: ["all", "city"], lat: 45.4782, lng: -122.6358 },
+            { id: 13, name: "Bradford Island Visitor Center", img: "Bonneville Dam.jpg", cat: "Outdoor", tabs: ["all", "gorge"], lat: 45.6420, lng: -121.9398 },
+            { id: 14, name: "Wooden Shoe Tulip Farm", img: "wooden_shoe.jpg", cat: "Outdoor", tabs: ["all", "silverfall"], lat: 45.1583, lng: -122.7483 },
+
+            // CULTURE / ARCH
+            { id: 15, name: "Pittock Mansion", img: "Pittock Mansion.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5256, lng: -122.7163 },
+            { id: 16, name: "Powell's City of Books", img: "powells_books.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5231, lng: -122.6813 },
+            { id: 17, name: "Oregon City Municipal Elevator", img: "oregon_city_elevator.jpg", cat: "Culture/Arch", tabs: ["all", "city", "silverfall"], lat: 45.3582, lng: -122.6094 },
+            { id: 18, name: "Vista House", img: "VistaHouse2.jpg", cat: "Culture/Arch", tabs: ["all", "city", "gorge"], lat: 45.5395, lng: -122.2443 },
+            { id: 19, name: "Timberline Lodge", img: "Timberline Lodge.jpg", cat: "Culture/Arch", tabs: ["all", "gorge"], lat: 45.3311, lng: -121.7110 },
+            { id: 20, name: "Portland Saturday Market", img: "saturday_market.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5228, lng: -122.6703 },
+            { id: 21, name: "Portland Farmer's Market at PSU", img: "pdx_farmers_market.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5118, lng: -122.6815 },
+            { id: 22, name: "South Waterfront Lower Tram Terminal", img: "waterfront_tram.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.4988, lng: -122.6713 },
+            { id: 23, name: "Hawthorn Asylum", img: "hawthorn_asylum.jpg", cat: "Culture/Arch", tabs: ["all", "city"], lat: 45.5120, lng: -122.6558 },
+
+            // COFFEE OR TEA
+            { id: 24, name: "Upper Left Roasters", img: "upper_left_roasters.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.5113, lng: -122.6534 },
+            { id: 25, name: "Nossa Familia Coffee", img: "nossa_familia.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.5332, lng: -122.6841 },
+            { id: 26, name: "Bastion Coffee Roasters", img: "bastion_coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.5521, lng: -122.6667 },
+            { id: 27, name: "Superjoy Coffee", img: "superjoy_coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.5188, lng: -122.6791 },
+            { id: 28, name: "The Tao of Tea", img: "tao_of_tea.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.5165, lng: -122.6280 },
+            { id: 29, name: "Randonnée Coffee", img: "Randonnee Coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "gorge"], lat: 45.6833, lng: -121.3968 },
+            { id: 30, name: "Stomping Grounds Fairview", img: "Stomping Ground Coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "city", "gorge"], lat: 45.5398, lng: -122.4398 },
+            { id: 31, name: "Stomping Grounds Drive Thru", img: "stomping_grounds_drive.jpg", cat: "Coffee or Tea", tabs: ["all", "city", "gorge"], lat: 45.5037, lng: -122.4251 },
+            { id: 32, name: "Willamette Coffee House", img: "willamette_coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "silverfall"], lat: 45.3533, lng: -122.6481 },
+            { id: 33, name: "Thornton Family Coffee Roasters", img: "thornton_coffee.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.4870, lng: -122.8041 },
+            { id: 34, name: "CHICHA San Chen 吃茶三千", img: "chicha_san_chen.jpg", cat: "Coffee or Tea", tabs: ["all", "city"], lat: 45.6214, lng: -122.6664 },
+
+            // FOOD
+            { id: 35, name: "Premium Matcha Cafe Maiko", img: "Premium Matcha Cafe Maiko.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5205, lng: -122.6728 },
+            { id: 36, name: "Behind The Museum Cafe", img: "museum_cafe.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5159, lng: -122.6823 },
+            { id: 37, name: "Excellent Cuisine", img: "excellent cuisine.jpg", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5048, lng: -122.5794 },
+            { id: 38, name: "Tèo Bun Bo Hue", img: "Teo Bun Bo Hue2.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5118, lng: -122.5790 },
+            { id: 39, name: "Nicholas Restaurant (Gresham)", img: "Nicholas Restaurant.jpg", cat: "Food", tabs: ["all", "city", "gorge"], lat: 45.5015, lng: -122.4338 },
+            { id: 40, name: "Nicholas Restaurant (Madison)", img: "Nicholas Restaurant.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5124, lng: -122.6483 },
+            { id: 41, name: "Noodle Man", img: "Noodle Man.png", cat: "Food", tabs: ["all", "city"], lat: 45.4300, lng: -122.5740 },
+            { id: 42, name: "Master Kong (SE Hawthorne Blvd)", img: "MasterKong_AI.png", cat: "Food", tabs: ["all", "city"], lat: 45.5135, lng: -122.6331 },
+            { id: 43, name: "Master Kong (SE Division St)", img: "MasterKong_AI.png", cat: "Food", tabs: ["all", "city"], lat: 45.5065, lng: -122.5758 },
+            { id: 44, name: "Jam On Hawthorne", img: "jam_on_hawthorne.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5123, lng: -122.6416 },
+            { id: 45, name: "Otto & Anita's Schnitzelhaus", img: "Otto and Anita.png", cat: "Food", tabs: ["all", "city"], lat: 45.4745, lng: -122.7121 },
+            { id: 46, name: "Stammtisch", img: "stammtisch.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5268, lng: -122.6358 },
+            { id: 47, name: "Murata Restaurant", img: "murata.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5160, lng: -122.6781 },
+            { id: 48, name: "Creo chocolate", img: "creo_chocolate.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5348, lng: -122.6565 },
+            { id: 49, name: "Otto's Sausage Kitchen", img: "ottos_sausage.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.4851, lng: -122.6033 },
+            { id: 50, name: "Eem - Thai BBQ & Cocktails", img: "eem_thai.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5414, lng: -122.6622 },
+            { id: 51, name: "Voodoo Doughnut", img: "voodoo_doughnut.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5227, lng: -122.6731 },
+            { id: 52, name: "Family Cafe", img: "family_cafe.jpg", cat: "Food", tabs: ["all", "city"], lat: 45.5218, lng: -122.6811 } 
+        ];
+
+        let currentTab = 'all';
+        let map;
+        let markers = {};
+        let previewTimeout;
+        const card = document.getElementById('preview-card');
+
+        // Initialize Map
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([45.52, -122.67], 10);
+            
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            renderData();
+            
+            // Keep card open if hovering over it directly
+            card.addEventListener('mouseenter', () => clearTimeout(previewTimeout));
+            card.addEventListener('mouseleave', hidePreview);
+        }
+
+        // Tab Switching Logic
+        window.setTab = (tabId) => {
+            currentTab = tabId;
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.tab === tabId) {
+                    btn.classList.add('bg-blue-600', 'text-white', 'shadow-sm');
+                    btn.classList.remove('bg-slate-100', 'text-slate-600', 'hover:bg-slate-200');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'text-white', 'shadow-sm');
+                    btn.classList.add('bg-slate-100', 'text-slate-600', 'hover:bg-slate-200');
+                }
+            });
+            renderData();
+        };
+
+        // Render List & Map Pins
+        function renderData() {
+            const listContainer = document.getElementById('location-list');
+            listContainer.innerHTML = '';
+            
+            for (let id in markers) map.removeLayer(markers[id]);
+            markers = {};
+
+            const filteredLocs = locations.filter(loc => loc.tabs.includes(currentTab));
+            const boundsArray = [];
+
+            filteredLocs.forEach(loc => {
+                // 1. Create List Item
+                const item = document.createElement('div');
+                item.className = "group bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md hover:border-blue-200 transition-all cursor-pointer flex flex-col relative";
+                
+                let iconClass = "fa-location-dot text-slate-400";
+                if (loc.cat.includes("Outdoor")) iconClass = "fa-tree text-green-500";
+                if (loc.cat.includes("Food")) iconClass = "fa-utensils text-orange-500";
+                if (loc.cat.includes("Coffee")) iconClass = "fa-mug-hot text-amber-700";
+                if (loc.cat.includes("Culture")) iconClass = "fa-building-columns text-purple-500";
+
+                item.innerHTML = `
+                    <div class="flex items-start justify-between mb-1">
+                        <h4 class="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition-colors pr-2">${loc.name}</h4>
+                        <i class="fa-solid ${iconClass} mt-0.5 shrink-0"></i>
+                    </div>
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${loc.cat}</span>
+                `;
+                
+                // Click to zoom
+                item.onclick = () => focusLocation(loc);
+
+                // Hover over List
+                item.addEventListener('mouseenter', (e) => {
+                    const rect = item.getBoundingClientRect();
+                    showPreview(loc, rect.right + 10, rect.top);
+                });
+                item.addEventListener('mouseleave', hidePreview);
+
+                listContainer.appendChild(item);
+
+                // 2. Create Map Marker
+                const marker = L.marker([loc.lat, loc.lng]).addTo(map);
+                
+                // Click Marker to zoom
+                marker.on('click', () => focusLocation(loc));
+                
+                // Hover over Marker
+                marker.on('mouseover', (e) => {
+                    showPreview(loc, e.originalEvent.clientX + 15, e.originalEvent.clientY + 15);
+                });
+                marker.on('mouseout', hidePreview);
+
+                markers[loc.id] = marker;
+                boundsArray.push([loc.lat, loc.lng]);
+            });
+
+            if (boundsArray.length > 0) map.fitBounds(boundsArray, { padding: [40, 40], maxZoom: 14 });
+        }
+
+        // Action: Center map
+        function focusLocation(loc) {
+            map.flyTo([loc.lat, loc.lng], 15, { duration: 1.5 });
+            if (window.innerWidth < 768) {
+                document.getElementById('map').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        // Preview Card Engine
+        function showPreview(loc, x, y) {
+            clearTimeout(previewTimeout);
+            
+            document.getElementById('preview-title').textContent = loc.name;
+            document.getElementById('preview-category').textContent = loc.cat;
+            
+            // MODIFICATION: Use the specific Location Name instead of its coordinates.
+            // By URL Encoding the name, Google Maps will search for the specific place profile 
+            // instead of just dropping a coordinate pin.
+            const placeQuery = encodeURIComponent(loc.name);
+            document.getElementById('preview-btn-map').href = `https://www.google.com/maps/search/?api=1&query=${placeQuery}`;
+            document.getElementById('preview-btn-dir').href = `https://www.google.com/maps/dir/?api=1&destination=${placeQuery}`;
+            
+            const imgEl = document.getElementById('preview-img');
+            const fallbackTextEl = document.getElementById('preview-fallback-text');
+            
+            // Image Fallback Logic using new 'img' property, or falling back to the name if missing
+            const imageFileName = loc.img ? loc.img : `${loc.name}.jpg`;
+            
+            imgEl.style.display = 'block'; 
+            imgEl.src = `images/${imageFileName}`; 
+            imgEl.onerror = () => {
+                imgEl.style.display = 'none'; 
+                fallbackTextEl.textContent = loc.name; 
+            };
+
+            card.classList.remove('hidden');
+            
+            // Screen boundary protection
+            let finalX = x;
+            let finalY = y;
+            const cardWidth = 288;
+            const cardHeight = 310;
+
+            if (finalX + cardWidth > window.innerWidth) finalX = x - cardWidth - 30;
+            if (finalY + cardHeight > window.innerHeight) finalY = window.innerHeight - cardHeight - 20;
+
+            card.style.left = `${finalX}px`;
+            card.style.top = `${finalY}px`;
+            
+            setTimeout(() => card.style.opacity = '1', 10);
+        }
+
+        function hidePreview() {
+            previewTimeout = setTimeout(() => {
+                card.style.opacity = '0';
+                setTimeout(() => { if(card.style.opacity === '0') card.classList.add('hidden'); }, 200); 
+            }, 150); 
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
